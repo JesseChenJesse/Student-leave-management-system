@@ -1,0 +1,12 @@
+{
+  "name": "student-leave-system",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node js/server.js"
+  },
+  "dependencies": {
+    "express": "^4.17.1"
+  }
+}
+

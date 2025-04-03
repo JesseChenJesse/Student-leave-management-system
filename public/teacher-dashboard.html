@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>202212033026雷鸣宇教师端界面</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<!-- 侧边栏 -->
+<div class="sidebar">
+    <a href="#" id="all-applications-link">所有申请</a>
+    <a href="#" id="pending-applications-link">待审批</a>
+    <a href="#" class="logout" id="logout-link">退出登录</a>
+</div>
+
+<!-- 主内容区 -->
+<div class="main-content">
+    <!-- 所有申请界面 -->
+    <div id="all-applications-view">
+        <h2>所有申请</h2>
+        <div id="all-leave-requests"></div>
+    </div>
+
+    <!-- 待审批界面 -->
+    <div id="pending-applications-view" style="display: none;">
+        <h2>待审批申请</h2>
+        <div id="pending-leave-requests"></div>
+    </div>
+</div>
+
+<!-- 请假详情模态框 -->
+<div id="leave-details-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>请假详情</h3>
+            <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body" id="leave-details"></div>
+        <div class="modal-footer" id="approval-buttons" style="display: none;">
+            <button id="approve-btn" class="btn">批准</button>
+            <button id="reject-btn" class="btn">拒绝</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 获取存储的用户ID和类型
+    const userId = localStorage.getItem('userId');
+    const userType = localStorage.getItem('userType');
+
+    // 获取DOM元素
+    const allApplicationsLink = document.getElementById('all-applications-link');
+    const pendingApplicationsLink = document.getElementById('pending-applications-link');
+    const logoutLink = document.getElementById('logout-link');
+    const allApplicationsView = document.getElementById('all-applications-view');
+    const pendingApplicationsView = document.getElementById('pending-applications-view');
+    const allLeaveRequests = document.getElementById('all-leave-requests');
+    const pendingLeaveRequests = document.getElementById('pending-leave-requests');
+    const leaveDetailsModal = document.getElementById('leave-details-modal');
+    const leaveDetails = document.getElementById('leave-details');
+    const approvalButtons = document.getElementById('approval-buttons');
+    const approveBtn = document.getElementById('approve-btn');
+    const rejectBtn = document.getElementById('reject-btn');
+    const modalClose = document.querySelector('.modal-close');
+
+    // 切换视图函数
+    function showView(viewToShow) {
+        allApplicationsView.style.display = viewToShow === allApplicationsView ? 'block' : 'none';
+        pendingApplicationsView.style.display = viewToShow === pendingApplicationsView ? 'block' : 'none';
+    }
+
+    // 绑定侧边栏链接事件
+    allApplicationsLink.addEventListener('click', () => showView(allApplicationsView));
+    pendingApplicationsLink.addEventListener('click', () => showView(pendingApplicationsView));
+    logoutLink.addEventListener('click', () => {
+        localStorage.removeItem('userId');
+        localStorage.removeItem('userType');
+        window.location.href = 'login.html';
+    });
+
+    // 计算请假天数
+    function calculateDays(startDate, endDate) {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const diffTime = Math.abs(end - start);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays;
+    }
+
+    // 获取状态对应的CSS类
+    function getStatusClass(status) {
+        return status === '待审批' ? 'pending' : 'approved';
+    }
+
+    // 加载所有请假申请
+    async function loadAllLeaveRequests() {
+        try {
+            const response = await fetch(`/api/leave-requests?userId=${userId}&userType=${userType}`);
+            const requests = await response.json();
+            requests.sort((a, b) => new Date(b.submitTime) - new Date(a.submitTime));
+            allLeaveRequests.innerHTML = requests.map(request => `
+                    <div class="leave-request ${getStatusClass(request.status)}" data-id="${request.id}">
+                        <p><strong>${request['student-name']} (${request['student-id']})</strong></p>
+                        <p>${request['leave-type']} | ${calculateDays(request['start-date'], request['end-date'])}天</p>
+                        <p>${new Date(request['start-date']).toLocaleString()} ~ ${new Date(request['end-date']).toLocaleString()}</p>
+                        <p>状态：${request.status}</p>
+                    </div>
+                `).join('');
+        } catch (error) {
+            console.error('加载所有请假记录失败:', error);
+        }
+    }
+
+    // 加载待审批请假申请
+    async function loadPendingLeaveRequests() {
+        try {
+            const response = await fetch(`/api/leave-requests?userId=${userId}&userType=${userType}&status=pending`);
+            const requests = await response.json();
+            requests.sort((a, b) => new Date(b.submitTime) - new Date(a.submitTime));
+            pendingLeaveRequests.innerHTML = requests.map(request => `
+                    <div class="leave-request pending" data-id="${request.id}">
+                        <p><strong>${request['student-name']} (${request['student-id']})</strong></p>
+                        <p>${request['leave-type']} | ${calculateDays(request['start-date'], request['end-date'])}天</p>
+                        <p>${new Date(request['start-date']).toLocaleString()} ~ ${new Date(request['end-date']).toLocaleString()}</p>
+                        <p>状态：待审批</p>
+                    </div>
+                `).join('');
+        } catch (error) {
+            console.error('加载待审批请假记录失败:', error);
+        }
+    }
+
+    // 显示请假详情
+    function showLeaveDetails(request) {
+        leaveDetails.innerHTML = `
+                <p><strong>申请提交时间：</strong>${new Date(request.submitTime).toLocaleString()}</p>
+                <p><strong>学生姓名：</strong>${request['student-name']}</p>
+                <p><strong>学号：</strong>${request['student-id']}</p>
+                <p><strong>请假类型：</strong>${request['leave-type']}</p>
+                <p><strong>开始时间：</strong>${new Date(request['start-date']).toLocaleString()}</p>
+                <p><strong>结束时间：</strong>${new Date(request['end-date']).toLocaleString()}</p>
+                <p><strong>请假天数：</strong>${calculateDays(request['start-date'], request['end-date'])}天</p>
+                <p><strong>请假事由：</strong>${request.reason}</p>
+                <p><strong>审批状态：</strong>${request.status}</p>
+            `;
+        leaveDetailsModal.style.display = 'flex';
+        approvalButtons.style.display = request.status === '待审批' ? 'flex' : 'none';
+        leaveDetailsModal.dataset.requestId = request.id;
+    }
+
+    // 处理请假申请审批
+    async function handleApproval(requestId, isApproved) {
+        try {
+            const response = await fetch(`/api/leave-requests/${requestId}/approve`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ approved: isApproved }),
+            });
+            if (response.ok) {
+                alert(isApproved ? '请假申请已批准' : '请假申请已拒绝');
+                loadAllLeaveRequests();
+                loadPendingLeaveRequests();
+                leaveDetailsModal.style.display = 'none';
+            } else {
+                alert('处理请假申请失败，请重试。');
+            }
+        } catch (error) {
+            console.error('处理请假申请失败:', error);
+            alert('处理请假申请时发生错误，请重试。');
+        }
+    }
+
+    // 绑定请假申请点击事件
+    allLeaveRequests.addEventListener('click', async (e) => {
+        const requestElement = e.target.closest('.leave-request');
+        if (requestElement) {
+            const requestId = requestElement.dataset.id;
+            const response = await fetch(`/api/leave-requests/${requestId}`);
+            const request = await response.json();
+            showLeaveDetails(request);
+        }
+    });
+
+    pendingLeaveRequests.addEventListener('click', async (e) => {
+        const requestElement = e.target.closest('.leave-request');
+        if (requestElement) {
+            const requestId = requestElement.dataset.id;
+            const response = await fetch(`/api/leave-requests/${requestId}`);
+            const request = await response.json();
+            showLeaveDetails(request);
+        }
+    });
+
+    // 绑定审批按钮事件
+    approveBtn.addEventListener('click', () => {
+        const requestId = leaveDetailsModal.dataset.requestId;
+        handleApproval(requestId, true);
+    });
+
+    rejectBtn.addEventListener('click', () => {
+        const requestId = leaveDetailsModal.dataset.requestId;
+        handleApproval(requestId, false);
+    });
+
+    // 关闭模态框
+    modalClose.addEventListener('click', () => {
+        leaveDetailsModal.style.display = 'none';
+    });
+
+    // 点击模态框外部关闭
+    leaveDetailsModal.addEventListener('click', (e) => {
+        if (e.target === leaveDetailsModal) {
+            leaveDetailsModal.style.display = 'none';
+        }
+    });
+
+    // 页面加载时显示所有申请
+    showView(allApplicationsView);
+    loadAllLeaveRequests();
+    loadPendingLeaveRequests();
+</script>
+</body>
+</html>
+

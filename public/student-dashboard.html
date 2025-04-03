@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>202212033026雷鸣宇学生端界面</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<!-- 侧边栏 -->
+<div class="sidebar">
+    <a href="#" id="history-link">历史申请</a>
+    <a href="#" id="new-application-link">新建申请</a>
+    <a href="#" class="logout" id="logout-link">退出登录</a>
+</div>
+
+<!-- 主内容区 -->
+<div class="main-content">
+    <!-- 历史申请界面 -->
+    <div id="history-view">
+        <h2>历史申请</h2>
+        <div id="leave-requests"></div>
+    </div>
+
+    <!-- 新建申请界面 -->
+    <div id="new-application-view" style="display: none;">
+        <h2>学生请假申请表</h2>
+        <form id="leave-application-form">
+            <div class="form-group">
+                <label for="student-name">姓名：</label>
+                <input type="text" id="student-name" name="student-name" required>
+            </div>
+            <div class="form-group">
+                <label for="student-id">学号：</label>
+                <input type="text" id="student-id" name="student-id" readonly>
+            </div>
+            <div class="form-group">
+                <label for="leave-type">请假类型：</label>
+                <select id="leave-type" name="leave-type" required>
+                    <option value="">请选择</option>
+                    <option value="病假">病假</option>
+                    <option value="事假">事假</option>
+                    <option value="其他">其他</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="teacher-id">教师工号：</label>
+                <input type="text" id="teacher-id" name="teacher-id" required>
+            </div>
+            <div class="form-group">
+                <label for="start-date">开始时间：</label>
+                <input type="datetime-local" id="start-date" name="start-date" required>
+            </div>
+            <div class="form-group">
+                <label for="end-date">结束时间：</label>
+                <input type="datetime-local" id="end-date" name="end-date" required>
+            </div>
+            <div class="form-group">
+                <label for="reason">请假事由：</label>
+                <textarea id="reason" name="reason" maxlength="100" placeholder="100字以内" required></textarea>
+            </div>
+            <button type="submit" class="btn">提交申请</button>
+        </form>
+    </div>
+</div>
+
+<!-- 请假详情模态框 -->
+<div id="leave-details-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>请假详情</h3>
+            <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body" id="leave-details"></div>
+    </div>
+</div>
+
+<script>
+    // 获取存储的用户ID和类型
+    const userId = localStorage.getItem('userId');
+    const userType = localStorage.getItem('userType');
+
+    // 获取DOM元素
+    const historyLink = document.getElementById('history-link');
+    const newApplicationLink = document.getElementById('new-application-link');
+    const logoutLink = document.getElementById('logout-link');
+    const historyView = document.getElementById('history-view');
+    const newApplicationView = document.getElementById('new-application-view');
+    const leaveRequests = document.getElementById('leave-requests');
+    const leaveApplicationForm = document.getElementById('leave-application-form');
+    const leaveDetailsModal = document.getElementById('leave-details-modal');
+    const leaveDetails = document.getElementById('leave-details');
+    const modalClose = document.querySelector('.modal-close');
+
+    // 自动填充学号
+    function autoFillStudentId() {
+        const studentIdInput = document.getElementById('student-id');
+        if (userId) {
+            studentIdInput.value = userId;
+        }
+    }
+
+    // 切换视图函数
+    function showView(viewToShow) {
+        historyView.style.display = viewToShow === historyView ? 'block' : 'none';
+        newApplicationView.style.display = viewToShow === newApplicationView ? 'block' : 'none';
+        if (viewToShow === newApplicationView) {
+            autoFillStudentId();
+        }
+    }
+
+    // 绑定侧边栏链接事件
+    historyLink.addEventListener('click', () => showView(historyView));
+    newApplicationLink.addEventListener('click', () => showView(newApplicationView));
+    logoutLink.addEventListener('click', () => {
+        localStorage.removeItem('userId');
+        localStorage.removeItem('userType');
+        window.location.href = 'login.html';
+    });
+
+    // 加载历史申请数据
+    async function loadLeaveRequests() {
+        try {
+            const response = await fetch(`/api/leave-requests?userId=${userId}&userType=${userType}`);
+            const requests = await response.json();
+            requests.sort((a, b) => new Date(b.submitTime) - new Date(a.submitTime));
+            leaveRequests.innerHTML = requests.map(request => `
+                    <div class="leave-request ${getStatusClass(request.status)}" data-id="${request.id}">
+                        <p><strong>${request['leave-type']}</strong> | ${calculateDays(request['start-date'], request['end-date'])}天</p>
+                        <p>${new Date(request['start-date']).toLocaleString()} ~ ${new Date(request['end-date']).toLocaleString()}</p>
+                        <p>状态：${request.status}</p>
+                    </div>
+                `).join('');
+        } catch (error) {
+            console.error('加载请假记录失败:', error);
+        }
+    }
+
+    // 获取状态对应的CSS类
+    function getStatusClass(status) {
+        switch (status) {
+            case '已批准': return 'approved';
+            case '待审批': return 'pending';
+            case '未通过': return 'rejected';
+            case '已过期': return 'expired';
+            default: return '';
+        }
+    }
+
+    // 添加计算天数的辅助函数
+    function calculateDays(startDate, endDate) {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const diffTime = Math.abs(end - start);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays;
+    }
+
+    // 提交新的请假申请
+    leaveApplicationForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(leaveApplicationForm);
+        const formObject = Object.fromEntries(formData.entries());
+        const startDate = new Date(formObject['start-date']);
+        const endDate = new Date(formObject['end-date']);
+
+        if (startDate >= endDate) {
+            alert('请假开始时间必须早于结束时间');
+            return;
+        }
+        try {
+            const response = await fetch('/api/leave-requests', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formObject)
+            });
+            if (response.ok) {
+                alert('请假申请提交成功！');
+                leaveApplicationForm.reset();
+                showView(historyView);
+                loadLeaveRequests();
+            } else {
+                const errorData = await response.json();
+                alert(`请假申请提交失败：${errorData.message}`);
+            }
+        } catch (error) {
+            console.error('提交请假申请失败:', error);
+            alert('提交请假申请时发生错误，请重试。');
+        }
+    });
+
+    leaveRequests.addEventListener('click', async (e) => {
+        const requestElement = e.target.closest('.leave-request');
+        if (requestElement) {
+            const requestId = requestElement.dataset.id;
+            try {
+                const response = await fetch(`/api/leave-requests/${requestId}`);
+                const request = await response.json();
+                showLeaveDetails(request);
+            } catch (error) {
+                console.error('获取请假详情失败:', error);
+            }
+        }
+    });
+
+    function showLeaveDetails(request) {
+        const detailsHtml = `
+                <p><strong>申请时间：</strong>${new Date(request.submitTime).toLocaleString()}</p>
+                <p><strong>学生姓名：</strong>${request['student-name']}</p>
+                <p><strong>学号：</strong>${request['student-id']}</p>
+                <p><strong>请假类型：</strong>${request['leave-type']}</p>
+                <p><strong>开始时间：</strong>${new Date(request['start-date']).toLocaleString()}</p>
+                <p><strong>结束时间：</strong>${new Date(request['end-date']).toLocaleString()}</p>
+                <p><strong>请假天数：</strong>${calculateDays(request['start-date'], request['end-date'])}天</p>
+                <p><strong>请假事由：</strong>${request.reason}</p>
+                <p><strong>审批状态：</strong>${request.status}</p>
+            `;
+        leaveDetails.innerHTML = detailsHtml;
+        leaveDetailsModal.style.display = 'flex';
+    }
+
+    // 关闭模态框
+    modalClose.addEventListener('click', () => {
+        leaveDetailsModal.style.display = 'none';
+    });
+
+    // 点击模态框外部关闭
+    leaveDetailsModal.addEventListener('click', (e) => {
+        if (e.target === leaveDetailsModal) {
+            leaveDetailsModal.style.display = 'none';
+        }
+    });
+
+    // 页面加载时显示历史申请并自动填充学号
+    showView(historyView);
+    loadLeaveRequests();
+    autoFillStudentId();
+</script>
+</body>
+</html>
+
